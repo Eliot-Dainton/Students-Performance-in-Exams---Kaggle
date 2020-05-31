@@ -1,0 +1,112 @@
+# import numpy as np
+# import pandas as pd
+# import tensorflow as tf
+# from tensorflow import keras
+# from keras.models import Model, Sequential
+
+from sklearn.preprocessing import LabelEncoder
+# from sklearn.preprocessing import OneHotEncoder
+
+import numpy as np
+import pandas as pd
+
+# random seeds for stochastic parts of neural network 
+# from tensorflow import set_random_seed
+from keras import Sequential
+from keras.models import Model
+from keras.layers import Input, Dense, Concatenate, Reshape, Dropout
+from keras.layers.embeddings import Embedding
+
+from sklearn.model_selection import StratifiedKFold
+
+import csv
+with open("openUniData.csv",'r') as dest_f:
+    data_iter = csv.reader(dest_f, delimiter = ",", quotechar = '"')
+    data = [data for data in data_iter]
+data_array = np.asarray(data)
+# data_array = data_array[1:]
+
+
+# for col in len(data_array.columns):
+# 	if (data_array[:,col].dtype.name=='category'):
+# 		num_categorical+=1 
+
+df_data = pd.DataFrame(data=data_array[1:1001,:],    # values
+				index=range(1000),    # 1st column as index
+             	columns=data_array[0,:])  # 1st row as the column names
+
+
+num_categorical = 5
+# for col in range(num_categorical):
+le = LabelEncoder()
+# Need .iloc for slicing a dataframe
+df_data.iloc[0:,0:num_categorical] = df_data.iloc[0:,0:num_categorical].apply(lambda col: le.fit_transform(col))
+# print(df_data)
+
+print(df_data) 
+
+# Not sure if I should use the OHE here. Don't I just want 1=groupA, 2=groupB...?
+# ohe = OneHotEncoder(sparse=False) 
+# ohe_data = ohe.fit_transform(df_data.iloc[0:,0]) # It returns an numpy array
+# print(ohe_data)
+
+
+# Can use this if it's binary
+# data_array[:,col] = pd.get_dummies(data_array[:,col], prefix_sep='_', drop_first=True)
+
+# print(data_array)
+models_list=[]
+
+for col in range(num_categorical):
+	# number_of_categories_per_feature
+	m = df_data.iloc[:,col].max()
+	print(df_data.iloc[:,col])
+
+	print(m)
+
+	embedding_size = int(min(50, (m+1)/2))
+	model = Sequential()
+	# input_dim is the number of categories in the categorical variable
+	# output_dim is the number of categorical variables total
+		# m+1 idk idk
+	model.add(Embedding(input_dim = m+1, output_dim = embedding_size, input_length = 1, name="embedding"))
+	model.add(Reshape(target_shape=(embedding_size,)))
+	# model.compile(loss = "mse", optimizer = "adam", metrics=["accuracy"])
+	# model.fit(x = data_small_df['mnth'].as_matrix(), y=data_small_df['cnt_Scaled'].as_matrix() , epochs = 50, batch_size = 4)
+	models_list.append(model)
+
+
+num_numerical = 3
+model_numerical = Sequential()
+model_numerical.add(Dense(16, input_dim=num_numerical))
+models_list.append(model_numerical)
+
+print(models_list)
+
+full_model = Concatenate()(models_list)
+
+
+# full_model = concatenate(axis=-1)
+full_model = Dense(80, activation='relu')(full_model)
+# full_model = Dropout(.35)(full_model)
+full_model = Dense(20, activation='relu')(full_model)
+# full_model = Dropout(.15)(full_model)
+full_model = Dense(10, activation='relu')(full_model)
+# full_model = Dropout(.15)(full_model)
+output = Dense(1, activation='sigmoid')(full_model)
+
+full_model.summary()
+
+
+full_model.compile(loss='binary_crossentropy', optimizer='adam')
+full_model.fit( df_data.iloc[0:,0:num_categorical], df_data.iloc[0:,7-num_categorical:7] )
+
+
+# Flatten converts model.output_shape == (None, 64, 32, 32) to model.output_shape == (None, 64*32*32=65536)
+
+# model.add(Dense(50, activation="relu"))
+# model.add(Dense(15, activation="relu"))
+# # why no final activation fn? Does it depend on output?
+# model.add(Dense(1))
+
+
