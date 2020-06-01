@@ -13,7 +13,7 @@ import pandas as pd
 # random seeds for stochastic parts of neural network 
 # from tensorflow import set_random_seed
 from keras import Sequential
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.layers import Input, Dense, Concatenate, Reshape, Dropout
 from keras.layers.embeddings import Embedding
 
@@ -37,13 +37,34 @@ df_data = pd.DataFrame(data=data_array[1:1001,:],    # values
 
 
 num_categorical = 5
-# for col in range(num_categorical):
+num_numerical = 3
+
+label_encodings = {}
+
 le = LabelEncoder()
 # Need .iloc for slicing a dataframe
-df_data.iloc[0:,0:num_categorical] = df_data.iloc[0:,0:num_categorical].apply(lambda col: le.fit_transform(col))
-# print(df_data)
+for col in range(num_categorical):
+	df_data.iloc[0:,col] = le.fit(df_data.iloc[0:,col])
+	# zip joins the kth element of first list with kth of the second
+	label_encodings.update(dict(zip(le.classes_, le.transform(le.classes_))))
 
-print(df_data) 
+
+# df_data.iloc[0:,0:num_categorical] = df_data.iloc[0:,0:num_categorical].apply(lambda col: le.fit_transform(col))
+# le_name_mapping = dict(zip(le.classes_, le.transform(le.classes_)))
+# print(le_name_mapping)
+
+train_df_data = pd.DataFrame(data=df_data.iloc[0:800,:].sample(frac=1).reset_index(drop=True),
+						index=range(800),
+						columns=data_array[0,:])
+
+
+test_df_data = pd.DataFrame(df_data.iloc[800:1001,:].sample(frac=1).reset_index(drop=True)).reset_index(drop=True)
+
+# print(train_df_data)
+# print(test_df_data)
+
+
+# print(df_data) 
 
 # Not sure if I should use the OHE here. Don't I just want 1=groupA, 2=groupB...?
 # ohe = OneHotEncoder(sparse=False) 
@@ -54,52 +75,124 @@ print(df_data)
 # Can use this if it's binary
 # data_array[:,col] = pd.get_dummies(data_array[:,col], prefix_sep='_', drop_first=True)
 
-# print(data_array)
-models_list=[]
 
-for col in range(num_categorical):
-	# number_of_categories_per_feature
-	m = df_data.iloc[:,col].max()
-	print(df_data.iloc[:,col])
+def build_embedding():
 
-	print(m)
+	embeddings=[]
+	inputs_list=[]
 
-	embedding_size = int(min(50, (m+1)/2))
-	model = Sequential()
-	# input_dim is the number of categories in the categorical variable
-	# output_dim is the number of categorical variables total
-		# m+1 idk idk
-	model.add(Embedding(input_dim = m+1, output_dim = embedding_size, input_length = 1, name="embedding"))
-	model.add(Reshape(target_shape=(embedding_size,)))
-	# model.compile(loss = "mse", optimizer = "adam", metrics=["accuracy"])
-	# model.fit(x = data_small_df['mnth'].as_matrix(), y=data_small_df['cnt_Scaled'].as_matrix() , epochs = 50, batch_size = 4)
-	models_list.append(model)
+	for col in range(num_categorical):
+		# number_of_categories_per_feature
+		m = train_df_data.iloc[:,col].max()
+		print(train_df_data.iloc[:,col])
 
+		print("m: ", m)
 
-num_numerical = 3
-model_numerical = Sequential()
-model_numerical.add(Dense(16, input_dim=num_numerical))
-models_list.append(model_numerical)
+		embedding_size = int(min(50, (m+1)/2))
 
-print(models_list)
+		input_ = Input(shape=(1,))
+		# input_dim is the number of categories in the categorical variable
+		# output_dim is the number of categorical variables total
+			# m+1 idk idk
+		embedding = Embedding(input_dim = m+1, output_dim = embedding_size, input_length = 1)(input_)
+		embedding = Reshape(target_shape=(embedding_size,))(embedding)
+		inputs_list.append(input_)
+		embeddings.append(embedding)
+		
 
-full_model = Concatenate()(models_list)
+	# FOR NUMERICAL INPUT
+	# input_numeric = Input(shape=(num_numerical,))
+	# embedding_numeric = Dense(16)(input_numeric) 
+	# inputs_list.append(input_numeric)
+	# embeddings.append(embedding_numeric)
 
+	# print(embeddings)
 
-# full_model = concatenate(axis=-1)
-full_model = Dense(80, activation='relu')(full_model)
-# full_model = Dropout(.35)(full_model)
-full_model = Dense(20, activation='relu')(full_model)
-# full_model = Dropout(.15)(full_model)
-full_model = Dense(10, activation='relu')(full_model)
-# full_model = Dropout(.15)(full_model)
-output = Dense(1, activation='sigmoid')(full_model)
+	full_model = Concatenate()(embeddings)
 
-full_model.summary()
+	# print(full_model)
+	# full_model.summary()
 
 
-full_model.compile(loss='binary_crossentropy', optimizer='adam')
-full_model.fit( df_data.iloc[0:,0:num_categorical], df_data.iloc[0:,7-num_categorical:7] )
+	# full_model = concatenate(axis=-1)
+	full_model = Dense(80, activation='relu')(full_model)
+	# full_model = Dropout(.35)(full_model)
+	full_model = Dense(20, activation='relu')(full_model)
+	# full_model = Dropout(.15)(full_model)
+	full_model = Dense(10, activation='relu')(full_model)
+	# full_model = Dropout(.15)(full_model)
+	output = Dense(3, activation='sigmoid')(full_model)
+
+	model = Model(inputs_list, output)
+	model.compile(loss='mse', optimizer='adam', metrics=["accuracy"])
+
+	return model
+	# full_model.summary()
+
+
+	# full_model.compile(loss='binary_crossentropy', optimizer='adam')
+	# full_model.fit( train_df_data.iloc[0:,0:num_categorical], train_df_data.iloc[0:,7-num_categorical:7] )
+
+# input=ip=[[first_cat], [second_cat], ...]
+ip_train=[train_df_data.iloc[0:,col] for col in range(num_categorical)]
+ip_test=[test_df_data.iloc[0:,col] for col in range(num_categorical)]
+
+# op=[train_df_data.iloc[0:,col+num_categorical] for col in range(num_numerical)]
+
+op_train = train_df_data.iloc[0:,num_categorical:num_categorical+num_numerical].to_numpy()
+op_test = test_df_data.iloc[0:,num_categorical:num_categorical+num_numerical].to_numpy()
+print(op_train)
+'''
+NN = build_embedding()
+NN.fit(ip_train, op_train, epochs=10, batch_size=200, verbose=1, validation_split=0.1,shuffle=True)
+
+
+results = NN.evaluate(ip_test, op_test)
+print(results)
+
+NN.save("openUni_encodings.h5")
+'''
+NN = load_model("openUni_encodings.h5") 
+
+
+def encode(string):
+	return label_encodings[string]
+
+immutable_label_encodings = dict([(k,v) for k,v in label_encodings.items()])
+print("babababa", immutable_label_encodings)
+
+
+encoded = pd.DataFrame(data_array[950,:]).to_numpy().reshape(1,8)
+original = pd.DataFrame(data_array[950,:]).to_numpy().reshape(1,8)
+# print(label_encodings)
+# print(label_encodings.get('completed', "?"))
+
+
+# print(NN.predict([[0],[0],[0],[0],[0]]))
+
+for x in range(5):
+	encoded[0][x] = immutable_label_encodings.get(encoded[0][x], "?")
+
+
+
+
+print("Data: ", original[0], " with marks ", NN.predict([[encoded[0][x]] for x in range(5)]), " ACTUAL: ", encoded[0][5], encoded[0][6],encoded[0][7])
+
+
+
+# for x in range(50):
+# 	row = ip_test[x,:]
+	# print("Text:\n" + test_data[x] + "\nand the author: " + test_labels[x] + " guessed as " + get_results(predict) + " with ", predict)
+
+
+# '''
+
+
+
+
+
+
+
 
 
 # Flatten converts model.output_shape == (None, 64, 32, 32) to model.output_shape == (None, 64*32*32=65536)
